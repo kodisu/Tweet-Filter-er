@@ -1,0 +1,234 @@
+# PACKAGES
+import requests
+import os
+import json
+import discord
+from discord import Webhook, RequestsWebhookAdapter
+import datetime
+
+
+# ENVIRONEMENT SECRETS
+import os
+os.environ["DISCORD_WEBHOOK"] = "your webhook"
+os.environ["bearer_token"] = "your bearer"
+
+bearer_token = os.environ['bearer_token']
+
+os.environ["DISCORD_BOT_TOKEN"] = "your bot token"
+
+keywords = ["cat", "dog"]
+
+# PICKLE in directory python dictionary storage FUNCTION
+# sample.pkl is for authorid, username key value pairs
+# projects.pkl is the projects we will be getting tweets from
+import pickle
+def pickle_username_import(author_id, username):
+    f = open("sample.pkl", "rb")
+    data = pickle.load(f)
+    f = open("sample.pkl", "wb")
+    #append arg
+    data[author_id] = username
+    pickle.dump(data, f)
+    f.close()
+
+def pickle_username_export(): #only use for printing
+    f = open("sample.pkl", "rb")
+    data = pickle.load(f)
+    return data
+
+# we will pickle a string
+def pickle_project_import(username):
+    f = open("projects.pkl", "rb")
+    data = pickle.load(f)
+    f = open("projects.pkl", "wb")
+    print(data)
+    #append arg
+    data = data[:-1] # remove bracket at end
+    data += "OR from:" + username + ")"
+    pickle.dump(data, f)
+    f.close()
+
+def pickle_project_export(): #only use for printing
+    f = open("projects.pkl", "rb")
+    data = pickle.load(f)
+    return data
+
+# TWITTER GENERAL FUNCTIONS
+def get_user(the_id):
+  url = "https://api.twitter.com/2/users/" + str(the_id)
+  bearer =  "BEARER " + os.environ['bearer_token_2']
+  payload={}
+  headers = {
+    'Authorization': bearer,
+    'Cookie': 'guest_id=v1%111; personalization_id="111=="'
+  }
+  response = requests.request("GET", url, headers=headers, data=payload)
+  parsed = json.loads(response.text)
+  print(response.text)
+  return(parsed["data"]["username"])
+
+
+# TWITTER STREAM FUNCTIONS
+def bearer_oauth(r):
+    """
+    Method required by bearer token authentication.
+    """
+
+    r.headers["Authorization"] = f"Bearer {bearer_token}"
+    r.headers["User-Agent"] = "v2FilteredStreamPython"
+    return r
+
+
+def get_rules():
+    print(bearer_oauth)
+    response = requests.get(
+        "https://api.twitter.com/2/tweets/search/stream/rules", auth=bearer_oauth
+    )
+    if response.status_code != 200:
+        raise Exception(
+            "Cannot get rules (HTTP {}): {}".format(response.status_code, response.text)
+        )
+    print(json.dumps(response.json()))
+    return response.json()
+
+
+def delete_all_rules(rules):
+    if rules is None or "data" not in rules:
+        return None
+
+    ids = list(map(lambda rule: rule["id"], rules["data"]))
+    payload = {"delete": {"ids": ids}}
+    response = requests.post(
+        "https://api.twitter.com/2/tweets/search/stream/rules",
+        auth=bearer_oauth,
+        json=payload
+    )
+    if response.status_code != 200:
+        raise Exception(
+            "Cannot delete rules (HTTP {}): {}".format(
+                response.status_code, response.text
+            )
+        )
+    print(json.dumps(response.json()))
+
+
+def set_rules(delete):
+    # You can adjust the rules if needed to follow accounts
+    accounts = "(from:elonmusk OR from:mcuban)"
+    sample_rules = [
+      {"value": accounts},
+      # {"value": "is:retweet "+accounts},
+      # {"value": "is:quote "+accounts}        
+    ]
+    payload = {"add": sample_rules}
+    response = requests.post(
+        "https://api.twitter.com/2/tweets/search/stream/rules",
+        auth=bearer_oauth,
+        json=payload,
+    )
+    if response.status_code != 201:
+        raise Exception(
+            "Cannot add rules (HTTP {}): {}".format(response.status_code, response.text)
+        )
+    print(json.dumps(response.json()))
+
+def get_stream(set):
+    response = requests.get(
+        "https://api.twitter.com/2/tweets/search/stream?tweet.fields=entities,author_id", auth=bearer_oauth, stream=True,
+    )
+    print(response.status_code) #if you get from the api succesfully it will return 200 in the console
+    if response.status_code != 200:
+        raise Exception(
+            "Cannot get stream (HTTP {}): {}".format(
+                response.status_code, response.text
+            )
+        )
+    for response_line in response.iter_lines():
+        if response_line:
+            json_response = json.loads(response_line) #this gives you the Tweet data
+
+            #this is cody's custom code to process the tweets
+            print("\n NEW ITEM:")
+            print(json_response)
+            # print(json_response["data"]["id"]) #some expection / edge case might be here
+
+            for k in keywords:
+              if k in json_response["data"]["text"]:
+                username = "ERROR"
+                author_id = json_response["data"]["author_id"]
+
+
+                # try use pickle to get username stored in keyvalue pair else get username from author_id
+                try:
+                    f = open("sample.pkl", "rb")
+                    data = pickle.load(f)
+                    username = data[author_id]
+                except KeyError:
+                    username = get_user(author_id)
+                    pickle_username_import(author_id, username)
+                # 
+
+                # construct tweet_url
+                tweet_id = json_response["data"]["id"]
+                tweet_url = "https://twitter.com/" + username + "/status/" + str(tweet_id)
+                discord.webhook.send(tweet_url, username="keyword found: " + k)
+                print(tweet_url)
+
+#DISCORD BOT FUNCTIONS
+
+# extract twitter profile username
+def extract_twitter_username(url):
+    username = url[20:]
+    print(username)
+    return username
+
+# add twitter account to list
+
+# use pickle on a second file
+
+def add_twitter_profile(url):
+    username = extract_twitter_username(url)
+
+
+# remove twitter account from list 
+
+# print out the list 
+
+client = discord.Client()
+
+@client.event
+async def on_ready():
+    print(f'{client.user} has connected to Discord!')
+
+@client.event
+async def on_message(message):
+    if message.author == client:
+      return
+    if message.content.startswith('https://twitter.com/'):
+        print(message.channel.id)
+        if message.channel.id == 942820081321275434:
+            # discord.webhook.send("meow meow meow")
+            add_twitter_profile(message.content)
+    # if message.content.startswith ('$twitter stalk all'):
+    #   stalk_all()
+    # if message.content.startswith('$last check'):
+    #   latest_check =db["latest_check"]
+
+# STATE VARIABLES
+webhook_url = os.environ['DISCORD_WEBHOOK']
+discord.webhook = Webhook.from_url(webhook_url, adapter=RequestsWebhookAdapter()) #webhook
+
+pickle_project_import("dummyTwitter")
+print(pickle_project_export())
+
+
+print(pickle_username_export())
+
+client.run(os.environ['DISCORD_BOT_TOKEN'])
+
+
+rules = get_rules()
+delete = delete_all_rules(rules)
+set = set_rules(delete)
+get_stream(set)
+
